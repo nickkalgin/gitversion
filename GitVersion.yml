@@ -1,0 +1,11 @@
+next-version: 0
+
+branches:
+  main:
+    increment: Minor
+    regex: ^main$
+    source-branches: [ "main" ]
+  patch:
+    increment: Patch
+    regex: ^\d+\.\d+\.x$
+    source-branches: [ "main" ]
