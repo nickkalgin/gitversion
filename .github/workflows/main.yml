@@ -56,6 +56,7 @@ jobs:
   tagging:
     runs-on: ubuntu-20.04
     needs: [version, test, build]
+    if: ${{ github.ref_type == 'branch' && (github.ref_name == 'main' || endsWith(github.ref_name, '.x')) }}
     env:
       REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}
     steps:
