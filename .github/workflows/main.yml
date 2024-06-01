@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy release'
+        type: boolean
+        default: true
   push:
     branches:
       - "**"
@@ -19,50 +24,72 @@ jobs:
         with:
           versionSpec: '5.12.0'
 
-      - name: Determine Version
+      - name: Determine a version number
         id: version
         uses: gittools/actions/gitversion/execute@v1.1.1
         with:
           useConfigFile: true
     outputs:
       GitVersion_MajorMinorPatch: ${{ steps.version.outputs.GitVersion_MajorMinorPatch }}
-
-  test:
-    runs-on: ubuntu-20.04
-    container: maven:3-eclipse-temurin-21
-    needs: version
-    env:
-      REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run tests
-        run: mvn test -ntp -Drevision=$REVISION
+      GitVersion_BranchName: ${{ steps.version.outputs.GitVersion_BranchName }}
+      GitVersion_ShortSha: ${{ steps.version.outputs.GitVersion_ShortSha }}
 
   build:
-    runs-on: ubuntu-20.04
+    needs: [version]
     container: maven:3-eclipse-temurin-21
-    needs: [version, test]
+    runs-on: ubuntu-20.04
     env:
-      REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}
-
+      REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}-${{ needs.version.outputs.GitVersion_BranchName }}.${{ needs.version.outputs.GitVersion_ShortSha }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build binaries
+      - name: Build a feature branch
         run: mvn package -ntp -Drevision=$REVISION
 
-  tagging:
+  deploy-snapshot:
+    if: ${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
+    needs: [version, build]
+    container: maven:3-eclipse-temurin-21
     runs-on: ubuntu-20.04
-    needs: [version, test, build]
+    env:
+      REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}-SNAPSHOT
+      GITHUB_USER: ${{ github.repository_owner }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy a snapshot
+        run: |
+          mvn versions:set -s .m2/settings.xml -ntp -DnewVersion=$REVISION
+          mvn deploy -s .m2/settings.xml -ntp -Drevision=$REVISION -DskipTests
+
+  deploy-release:
+    if: ${{ github.ref_type == 'branch' && (github.ref_name == 'main' || endsWith(github.ref_name, '.x')) && inputs.deploy }}
+    needs: [version, build]
+    container: maven:3-eclipse-temurin-21
+    runs-on: ubuntu-20.04
+    env:
+      REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}
+      GITHUB_USER: ${{ github.repository_owner }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy release
+        run: |
+          mvn versions:set -s .m2/settings.xml -ntp -DnewVersion=$REVISION
+          mvn deploy -s .m2/settings.xml -ntp -Drevision=$REVISION -DskipTests
+
+  tag-release:
     if: ${{ github.ref_type == 'branch' && (github.ref_name == 'main' || endsWith(github.ref_name, '.x')) }}
+    needs: [version, deploy-release]
+    runs-on: ubuntu-20.04
     env:
       REVISION: ${{ needs.version.outputs.GitVersion_MajorMinorPatch }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Push tag to the repo
+      - name: Push a release tag to the repo
         run: |
           git tag $REVISION
           git push --tags
