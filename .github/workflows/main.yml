@@ -3,7 +3,7 @@ name: CI
 on:
   workflow_dispatch:
     inputs:
-      deploy:
+      release:
         description: 'Deploy release'
         type: boolean
         default: true
@@ -47,7 +47,7 @@ jobs:
         run: mvn package -ntp -Drevision=$REVISION
 
   deploy-snapshot:
-    if: ${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
+    if: ${{ github.ref_type == 'branch' && github.ref_name == 'main' && !inputs.release }}
     needs: [version, build]
     container: maven:3-eclipse-temurin-21
     runs-on: ubuntu-20.04
@@ -64,7 +64,7 @@ jobs:
           mvn deploy -s .m2/settings.xml -ntp -Drevision=$REVISION -DskipTests
 
   deploy-release:
-    if: ${{ github.ref_type == 'branch' && (github.ref_name == 'main' || endsWith(github.ref_name, '.x')) && inputs.deploy }}
+    if: ${{ github.ref_type == 'branch' && (github.ref_name == 'main' || endsWith(github.ref_name, '.x')) && inputs.release }}
     needs: [version, build]
     container: maven:3-eclipse-temurin-21
     runs-on: ubuntu-20.04
